@@ -487,11 +487,53 @@ sub _build_describe_options {
     }
 
     # ensure that shortcircuit options are handled first
-    for my $copt (
-      sort {     ($b->{constraint}{shortcircuit} || 0)
-             <=> ($a->{constraint}{shortcircuit} || 0)
-           } grep { $_->{constraint} } @opts
-    ) {
+    # and that there is at most one used shortcircuit option
+
+    # shunt options with constraints
+    # used options with shortcircuit constraints
+    # and other options with shortcircuit constraints
+    # into their respective arrays
+    # (this is a lot faster than three greps after eachother
+    # even over an array of just 10 hashrefs!)
+    my ( @constr_opts, @scut_opts, @used_scut_opts );
+    for my $opt (@opts) {
+      if ( $opt->{constraint} ) {
+        if ( $opt->{constraint}{shortcircuit} ) {
+          if ( $return{ $opt->{name} } ) {
+            push @used_scut_opts, $opt;
+          } else {
+            push @scut_opts, $opt;
+          }
+        } else {
+          push @constr_opts, $opt;
+        }
+      }
+    }
+
+    # we will need an array with all shortcircuit options
+    # but not one with just the unused ones
+    # however we need the used one(s) to be first!
+    unshift @scut_opts, @used_scut_opts;
+
+    # ensure that at most one shortcircuit option was used
+    # and error otherwise
+    if ( @used_scut_opts > 1 ) {
+      # BAD more than one shortcircuit option used
+
+      # construct a nice list of all the shortcircuit options
+      # for the error message
+      my $last = pop(@scut_opts)->{name};
+      my $list = join q[, ], map { $_->{name} } @scut_opts;
+
+      $usage->die({
+        pre_text => "The options $list and $last are mutually exclusive.\n",
+      });
+    }
+
+    # we want a list of the constrained options
+    # with the shortcircuit options first
+    # and any used shortcircuit option first of all
+    for my $copt ( @scut_opts, @constr_opts ) {
       delete $copt->{constraint}->{hidden};
       my $is_shortcircuit = delete $copt->{constraint}{shortcircuit};
       my $name = $copt->{name};
